@@ -5,7 +5,11 @@ from typing import List, Optional, Dict, Any
 from .auth import verify_frontend_api_key
 from .llm_client import llm_client
 from .mcp_client.academic_search.arxiv_search import arxiv_mcp
+from .vectordb_client import VectorDBClient
+from .local_ingest import build_documents_from_folder
 import re
+
+vectordb_client = VectorDBClient()
 
 
 # Pydantic models for request/response validation
@@ -87,3 +91,32 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
         ),
         media_type="application/x-ndjson"
     )
+@router.post("/v1/local-ingest", tags=["LLM Operations"])
+async def ingest_local_folder(
+    req: LocalFolderIngestRequest,
+    _: str = Depends(verify_frontend_api_key),
+):
+    try:
+        documents = build_documents_from_folder(req.folder_path, req.collection_name)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not documents:
+        return {"status": "ok", "ingested": 0, "message": "No supported files found (pdf/txt)."}
+
+    if req.max_docs is not None:
+        documents = documents[: req.max_docs]
+
+    BATCH_SIZE = 50
+    total_ingested = 0
+
+    for i in range(0, len(documents), BATCH_SIZE):
+        batch = documents[i : i + BATCH_SIZE]
+        vectordb_client.ingest(req.collection_name, batch)
+        total_ingested += len(batch)
+
+    return {
+        "status": "ok",
+        "collection_name": req.collection_name,
+        "ingested": total_ingested,
+    }
