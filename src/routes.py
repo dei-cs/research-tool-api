@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from .auth import verify_frontend_api_key
 from .llm_client import llm_client
 from .mcp_client.academic_search.arxiv_search import arxiv_mcp
+from .vectordb_client import VectorDBClient
+from .local_ingest import build_documents_from_folder, chunk_text, extract_text
 import re
+from pathlib import Path
+
+vectordb_client = VectorDBClient()
 
 
 # Pydantic models for request/response validation
@@ -23,7 +28,18 @@ class ChatRequest(BaseModel):
     stream: Optional[bool] = Field(True, description="Whether to stream the response")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
 
+class LocalFolderIngestRequest(BaseModel):
+    folder_path: str = Field(..., description="Local path inside the container/host to scan for documents")
+    collection_name: str = Field("documents", description="Target collection name in vector DB")
+    max_docs: Optional[int] = Field(
+        None,
+        description="Optional limit on number of chunks/documents to send (for safety during testing)",
+    )
 
+class UploadResult(BaseModel):
+    status: str
+    collection_name: str
+    ingested: int
 # Create router
 router = APIRouter(
     tags=["LLM Operations"]
@@ -86,4 +102,112 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
             **(request.metadata or {})
         ),
         media_type="application/x-ndjson"
+    )
+@router.post("/v1/local-ingest", tags=["LLM Operations"])
+async def ingest_local_folder(
+    req: LocalFolderIngestRequest,
+    _: str = Depends(verify_frontend_api_key),
+):
+    try:
+        documents = build_documents_from_folder(req.folder_path, req.collection_name)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not documents:
+        return {"status": "ok", "ingested": 0, "message": "No supported files found (pdf/txt)."}
+
+    if req.max_docs is not None:
+        documents = documents[: req.max_docs]
+
+    BATCH_SIZE = 50
+    total_ingested = 0
+
+    for i in range(0, len(documents), BATCH_SIZE):
+        batch = documents[i : i + BATCH_SIZE]
+        vectordb_client.ingest(req.collection_name, batch)
+        total_ingested += len(batch)
+
+    return {
+        "status": "ok",
+        "collection_name": req.collection_name,
+        "ingested": total_ingested,
+    }
+@router.post("/v1/upload-docs", response_model=UploadResult, tags=["LLM Operations"])
+async def upload_docs(
+    files: List[UploadFile] = File(..., description="One or more documents to ingest"),
+    collection_name: str = Form("documents"),
+    user_id: str = Form("anonymous"),
+    _: str = Depends(verify_frontend_api_key),
+):
+    """
+    Upload multiple files (PDF/TXT etc) and ingest them into the vector DB.
+
+    Frontend can drag & drop a folder and send all files in one request.
+    Backend just sees a list of files.
+    """
+    documents: List[Dict[str, Any]] = []
+    doc_index = 0
+
+    for uploaded in files:
+        filename = uploaded.filename or "unnamed"
+        suffix = Path(filename).suffix.lower()
+
+        # Read file contents into memory
+        content = await uploaded.read()
+
+        # Write to a temp file so we can reuse extract_text()
+        tmp_path = Path("/tmp") / f"upload_{doc_index}{suffix}"
+        tmp_path.write_bytes(content)
+
+        try:
+            full_text = extract_text(tmp_path)
+        except ValueError:
+            # Unsupported type for now, skip
+            print(f"Skipping unsupported file type: {filename}")
+            continue
+        finally:
+            # Clean up temp file
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        chunks = chunk_text(full_text)
+
+        for idx, chunk in enumerate(chunks):
+            doc_id = f"{user_id}:{filename}:chunk-{idx}"
+            documents.append(
+                {
+                    "id": doc_id,
+                    "text": chunk,
+                    "metadata": {
+                        "user_id": user_id,
+                        "source": "upload",
+                        "filename": filename,
+                        "chunk_index": idx,
+                    },
+                }
+            )
+
+        doc_index += 1
+
+    if not documents:
+        return UploadResult(
+            status="ok",
+            collection_name=collection_name,
+            ingested=0,
+        )
+
+    # Ingest in batches to avoid huge payloads
+    BATCH_SIZE = 50
+    total_ingested = 0
+    for i in range(0, len(documents), BATCH_SIZE):
+        batch = documents[i : i + BATCH_SIZE]
+        vectordb_client.ingest(collection_name, batch)
+        total_ingested += len(batch)
+
+    return UploadResult(
+        status="ok",
+        collection_name=collection_name,
+        ingested=total_ingested,
     )
