@@ -24,4 +24,4 @@ services:
 networks:
   llm-gateway-network:
     external: true
-    name: llm-server-app_default
+    name: research-tool-llm_default

@@ -2,8 +2,7 @@
 import os
 from pathlib import Path
 from typing import List, Dict, Any
-
-from PyPDF2 import PdfReader  # pip install PyPDF2
+from PyPDF2 import PdfReader
 
 
 def extract_text_from_txt(path: Path) -> str:
