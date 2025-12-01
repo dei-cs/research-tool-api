@@ -44,7 +44,7 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
     messages = [msg.dict() for msg in request.messages]
     
     
-    enable_academic_search = True  # Toggle for academic search feature
+    enable_academic_search = False  # Toggle for academic search feature
     
     if enable_academic_search:
         # Check for 'academic_search' keyword in the last user message
