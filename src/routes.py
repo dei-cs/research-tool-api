@@ -27,7 +27,13 @@ class ChatRequest(BaseModel):
     stream: Optional[bool] = Field(True, description="Whether to stream the response")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
 
-
+class LocalFolderIngestRequest(BaseModel):
+    folder_path: str = Field(..., description="Local path inside the container/host to scan for documents")
+    collection_name: str = Field("documents", description="Target collection name in vector DB")
+    max_docs: Optional[int] = Field(
+        None,
+        description="Optional limit on number of chunks/documents to send (for safety during testing)",
+    )
 # Create router
 router = APIRouter(
     tags=["LLM Operations"]
