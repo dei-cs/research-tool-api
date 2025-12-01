@@ -132,6 +132,7 @@ async def ingest_local_folder(
         "collection_name": req.collection_name,
         "ingested": total_ingested,
     }
+    
 @router.post("/v1/upload-docs", response_model=UploadResult, tags=["LLM Operations"])
 async def upload_docs(
     files: List[UploadFile] = File(..., description="One or more documents to ingest"),
