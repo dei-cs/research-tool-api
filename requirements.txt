@@ -19,3 +19,5 @@ bs4
 arxiv
 
 PyPDF2>=3.0.0
+
+google-auth
