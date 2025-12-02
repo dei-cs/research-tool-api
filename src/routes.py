@@ -32,6 +32,7 @@ Message: {prompt}
 Search query:"""
     
     try:
+        # max_tokens=100: Limit to ~75 words for concise keyword extraction only
         query = await llm_client.complete(extraction_prompt, max_tokens=100)
         if query:
             logger.info(f"[QUERY EXTRACTION] ✓ Refined query: '{query}'")

@@ -85,10 +85,17 @@ class LLMServiceClient:
                 detail=f"Failed to connect to LLM service: {str(e)}"
             )
     
-    async def complete(self, prompt: str, model: Optional[str] = None, max_tokens: int = 150) -> str:
+    async def complete(self, prompt: str, model: Optional[str] = None, *, max_tokens: int) -> str:
         """
         Non-streaming completion for quick LLM calls (e.g., query extraction).
-        Returns just the text content of the LLM response.
+        
+        Args:
+            prompt: The prompt to send to LLM
+            model: Optional model override
+            max_tokens: Maximum tokens to generate (REQUIRED - caller must specify)
+        
+        Returns:
+            Just the text content of the LLM response.
         """
         logger.info(f"[LLM CLIENT] Complete request - max_tokens: {max_tokens}")
         
