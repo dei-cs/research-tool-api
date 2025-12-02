@@ -1,6 +1,6 @@
 from fastapi import Security, HTTPException, status, Request
 from fastapi.security import APIKeyHeader
-from .config import settings
+from .app_settings import settings
 
 # Define API Key header for frontend authentication
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)

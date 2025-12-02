@@ -3,9 +3,13 @@ import json
 import logging
 from typing import Dict, Any, Optional, AsyncIterator
 from fastapi import HTTPException, status
-from .config import settings
+from .app_settings import settings
+from .config.config_manager import get_config
 
 logger = logging.getLogger(__name__)
+
+# Initialize config
+config = get_config()
 
 # Simple LLM client interface, holds functions to interact with LLM service
 class LLMServiceClient:
@@ -13,7 +17,8 @@ class LLMServiceClient:
     def __init__(self):
         self.llm_base_url = settings.llm_service_url
         self.llm_api_key = settings.llm_service_api_key
-        self.timeout = 120.0  # > 2 minutes response time -> timeout for LLM operation
+        self.streaming_timeout = config.llm.timeouts.streaming
+        self.completion_timeout = config.llm.timeouts.completion
     
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with authentication for LLM service."""
@@ -49,7 +54,7 @@ class LLMServiceClient:
         
         try:
             logger.info(f"[LLM CLIENT] Connecting to LLM service at {self.llm_base_url}/v1/chat")
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.streaming_timeout) as client:
                 async with client.stream(
                     "POST",
                     f"{self.llm_base_url}/v1/chat",
@@ -73,7 +78,7 @@ class LLMServiceClient:
                     logger.info(f"[LLM CLIENT] ✓ Streaming complete ({chunk_count} chunks sent)")
                     
         except httpx.TimeoutException:
-            logger.error(f"[LLM CLIENT] ✗ Request timed out after {self.timeout}s")
+            logger.error(f"[LLM CLIENT] ✗ Request timed out after {self.streaming_timeout}s")
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail="LLM service request timed out"
@@ -110,7 +115,7 @@ class LLMServiceClient:
         
         try:
             logger.info(f"[LLM CLIENT] Sending non-streaming request to {self.llm_base_url}/v1/chat")
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=self.completion_timeout) as client:
                 response = await client.post(
                     f"{self.llm_base_url}/v1/chat",
                     json=payload,

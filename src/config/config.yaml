@@ -1,0 +1,82 @@
+# Configuration Centralization System
+# All tunable parameters for RAG, LLM, and Prompt Engineering experiments
+
+# RAG Configuration
+rag:
+  enabled: true
+  n_results: 3
+  relevance_threshold: 1.0
+  collection_name: "documents"
+  query_extraction:
+    max_tokens: 100  # Limit for concise keyword extraction (~75 words)
+    prompt_template: |
+      Extract the main search query or key information need from this message.
+      Return ONLY the essential search terms or question, removing conversational elements.
+      Be concise - return 1-2 sentences maximum.
+      
+      Message: {prompt}
+      
+      Search query:
+
+# LLM Configuration
+llm:
+  default_model: "llama3.2:1b"
+  enforce_default_model: true
+  default_embedding_model: "embeddinggemma:300m"
+  timeouts:
+    streaming: 120.0      # Streaming chat requests (longer responses)
+    completion: 30.0      # Non-streaming completions (quick tasks)
+    connection: 10.0      # Connection timeout
+    read: 60.0           # Read timeout
+    write: 60.0          # Write timeout
+  completion:
+    temperature: 0.7     # Not currently used, but ready for future
+    top_p: 1.0          # Not currently used
+    top_k: 50           # Not currently used
+
+# Academic Search Configuration
+academic_search:
+  enabled: false
+  max_results: 5         # Number of papers to retrieve from arXiv
+  search_fields: ["title", "abstract", "category"]
+  sort_by: "relevance"
+
+# Document Processing Configuration
+document_processing:
+  chunking:
+    max_chars: 1500      # Chunk size for document splitting
+    overlap: 0           # Future: add overlap between chunks
+  supported_formats: [".pdf", ".txt"]
+  batch_size: 50         # Batch size for vector DB ingestion
+
+# Vector Database Configuration
+vectordb:
+  default_collection: "documents"
+  query:
+    default_n_results: 5   # Default when not overridden by caller
+    max_n_results: 100
+    min_n_results: 1
+  timeout: 60              # HTTP request timeout for vector DB operations
+
+# Prompt Engineering
+prompts:
+  system_message: "You are a helpful assistant. Keep replies brief unless asked for detail."
+  context_template: |
+    {context}
+    
+    === User Question ===
+    {content}
+    
+    Please answer based on the provided context above.
+  academic_context_header: "=== Academic Research Papers from arXiv ==="
+
+# Service URLs (can be overridden by environment variables)
+services:
+  llm_url: "http://api:3001"
+  vectordb_url: "http://host.docker.internal:8003"
+  ollama_url: "http://ollama:11434"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - [%(name)s] - %(levelname)s - %(message)s"

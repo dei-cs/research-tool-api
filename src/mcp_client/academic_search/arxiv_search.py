@@ -13,7 +13,8 @@ class ArxivSearchMCP:
     def search(
         self,
         query: str,
-        max_results: int = 5,
+        *,
+        max_results: int,
         search_in: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
@@ -21,7 +22,7 @@ class ArxivSearchMCP:
         
         Args:
             query: Search query string
-            max_results: Maximum number of results to return (default: 5)
+            max_results: Maximum number of results to return (REQUIRED)
             search_in: List of fields to search in ('title', 'abstract', 'category')
                       If None, searches in all fields
         
@@ -29,6 +30,7 @@ class ArxivSearchMCP:
             List of paper dictionaries with title, authors, abstract, url, etc.
         """
         if search_in is None:
+            # Default fields - can be made configurable later
             search_in = ['title', 'abstract', 'category']
         
         # Build arXiv query based on search fields

@@ -2,13 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from google.oauth2 import id_token
-from google.auth.transport import requests as grequests
 from .auth import verify_frontend_api_key
 from .llm_client import llm_client
 from .mcp_client.academic_search.arxiv_search import arxiv_mcp
 from .vectordb_client import VectorDBClient
 from .local_ingest import build_documents_from_folder, chunk_text, extract_text
+from .config.config_manager import get_config
 import re
 import os
 import logging
@@ -18,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 vectordb_client = VectorDBClient()
 
+# Initialize config
+config = get_config()
+
 
 async def extract_search_query(prompt: str) -> str:
     """
@@ -26,17 +28,11 @@ async def extract_search_query(prompt: str) -> str:
     """
     logger.info(f"[QUERY EXTRACTION] Starting extraction for prompt: {prompt[:100]}...")
     
-    extraction_prompt = f"""Extract the main search query or key information need from this message.
-Return ONLY the essential search terms or question, removing conversational elements.
-Be concise - return 1-2 sentences maximum.
-
-Message: {prompt}
-
-Search query:"""
+    # Use prompt template from config
+    extraction_prompt = config.rag.query_extraction.prompt_template.format(prompt=prompt)
     
     try:
-        # max_tokens=100: Limit to ~75 words for concise keyword extraction only
-        query = await llm_client.complete(extraction_prompt, max_tokens=100)
+        query = await llm_client.complete(extraction_prompt, max_tokens=config.rag.query_extraction.max_tokens)
         if query:
             logger.info(f"[QUERY EXTRACTION] ✓ Refined query: '{query}'")
             return query
@@ -118,12 +114,7 @@ async def expand_prompt_with_rag(
         
         # Step 5: Combine context with original prompt
         logger.info(f"[RAG] Step 5: Combining context with user query...")
-        expanded = f"""{context}
-
-=== User Question ===
-{content}
-
-Please answer based on the provided context above."""
+        expanded = config.prompts.context_template.format(context=context, content=content)
         
         logger.info(f"[RAG] ✓ Successfully expanded prompt (final length: {len(expanded)} chars)")
         logger.info(f"[RAG] ========== RAG Enhancement Complete ==========")
@@ -185,9 +176,9 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
     # Into: [{"role": "user", "content": "Hello!"}]
     messages = [msg.dict() for msg in request.messages]
     
-    # Feature toggles
-    enable_rag = True  # Toggle for RAG with query refinement
-    enable_academic_search = False  # Toggle for academic search feature
+    # Get feature flags from config
+    enable_rag = config.rag.enabled
+    enable_academic_search = config.academic_search.enabled
     
     logger.info(f"[CHAT REQUEST] Feature flags - RAG: {enable_rag}, Academic Search: {enable_academic_search}")
     
@@ -197,12 +188,12 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
         last_message = messages[-1]
         if last_message.get('role') == 'user':
             content = last_message.get('content', '')
-            # Expand with RAG using query refinement
+            # Expand with RAG using config values
             enhanced_content = await expand_prompt_with_rag(
                 content=content,
-                collection_name="documents",
-                n_results=3,
-                relevance_threshold=1  # Increased - ChromaDB distances are typically 0.5-2.0
+                collection_name=config.rag.collection_name,
+                n_results=config.rag.n_results,
+                relevance_threshold=config.rag.relevance_threshold
             )
             messages[-1]['content'] = enhanced_content
     
@@ -228,7 +219,7 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
                         search_query = re.sub(r'academic_search', '', content, flags=re.IGNORECASE).strip()
                     
                     # Perform arXiv search
-                    search_results = arxiv_mcp.search(query=search_query, max_results=5)
+                    search_results = arxiv_mcp.search(query=search_query, max_results=config.academic_search.max_results)
                     
                     # Format results as context
                     context = arxiv_mcp.format_results_for_context(search_results)
@@ -256,7 +247,11 @@ async def ingest_local_folder(
     _: str = Depends(verify_frontend_api_key),
 ):
     try:
-        documents = build_documents_from_folder(req.folder_path, req.collection_name)
+        documents = build_documents_from_folder(
+            req.folder_path, 
+            req.collection_name,
+            max_chars=config.document_processing.chunking.max_chars
+        )
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -266,7 +261,7 @@ async def ingest_local_folder(
     if req.max_docs is not None:
         documents = documents[: req.max_docs]
 
-    BATCH_SIZE = 50
+    BATCH_SIZE = config.document_processing.batch_size
     total_ingested = 0
 
     for i in range(0, len(documents), BATCH_SIZE):
@@ -320,7 +315,7 @@ async def upload_docs(
             except Exception:
                 pass
 
-        chunks = chunk_text(full_text)
+        chunks = chunk_text(full_text, max_chars=config.document_processing.chunking.max_chars)
 
         for idx, chunk in enumerate(chunks):
             doc_id = f"{user_id}:{filename}:chunk-{idx}"
@@ -347,7 +342,7 @@ async def upload_docs(
         )
 
     # Ingest in batches to avoid huge payloads
-    BATCH_SIZE = 50
+    BATCH_SIZE = config.document_processing.batch_size
     total_ingested = 0
     for i in range(0, len(documents), BATCH_SIZE):
         batch = documents[i : i + BATCH_SIZE]
