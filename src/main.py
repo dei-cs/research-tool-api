@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .config import settings
+from .app_settings import settings
 import uvicorn
 import logging
 
@@ -59,7 +59,10 @@ async def health_check():
 
 # Import and include routers
 from .routes import router as api_router
+from .config_routes import router as config_router
+
 app.include_router(api_router)
+app.include_router(config_router)
 
 
 if __name__ == "__main__":

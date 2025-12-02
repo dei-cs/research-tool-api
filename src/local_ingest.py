@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import List, Dict, Any
 from PyPDF2 import PdfReader
 
+# Import config at module level for use in build_documents_from_folder
+# chunk_text remains parameterless, callers must provide max_chars
+
 
 def extract_text_from_txt(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
@@ -33,10 +36,16 @@ def extract_text(path: Path) -> str:
     raise ValueError(f"Unsupported file type: {ext}")
 
 
-def chunk_text(text: str, max_chars: int = 1500) -> List[str]:
+def chunk_text(text: str, *, max_chars: int) -> List[str]:
     """
-    Very simple chunker: hard split every max_chars.
-    You can later improve to split on sentences/paragraphs.
+    Chunk text into segments.
+    
+    Args:
+        text: Text to chunk
+        max_chars: Maximum characters per chunk (REQUIRED - caller must specify)
+    
+    Returns:
+        List of text chunks
     """
     text = text.strip()
     if not text:
@@ -48,7 +57,15 @@ def chunk_text(text: str, max_chars: int = 1500) -> List[str]:
     ]
 
 
-def build_documents_from_folder(root_folder: str, collection_name: str) -> List[Dict[str, Any]]:
+def build_documents_from_folder(root_folder: str, collection_name: str, max_chars: int) -> List[Dict[str, Any]]:
+    """
+    Build document list from folder for ingestion.
+    
+    Args:
+        root_folder: Path to folder containing documents
+        collection_name: Name of collection for metadata
+        max_chars: Maximum characters per chunk
+    """
     root = Path(root_folder)
     if not root.exists():
         raise FileNotFoundError(f"Folder does not exist: {root_folder}")
@@ -68,7 +85,7 @@ def build_documents_from_folder(root_folder: str, collection_name: str) -> List[
             print(f"Skipping {path} due to error: {e}")
             continue
 
-        chunks = chunk_text(full_text)
+        chunks = chunk_text(full_text, max_chars=max_chars)
         rel_path = str(path.relative_to(root))
 
         for idx, chunk in enumerate(chunks):
