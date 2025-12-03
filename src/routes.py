@@ -355,31 +355,3 @@ async def upload_docs(
         ingested=total_ingested,
     )
 
-TOKENS_FILE = os.environ.get("TOKENS_FILE", "tokens.txt")
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")  # set this in your Docker env / .env
-
-class TokenRequest(BaseModel):
-    token: str
-
-@router.post("/login/google")
-async def verify_and_store(data: TokenRequest):
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured on server")
-
-    # Verify the ID token with Google's library
-    try:
-        idinfo = id_token.verify_oauth2_token(data.token, grequests.Request(), GOOGLE_CLIENT_ID)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid Google ID token")
-
-    # Ensure directory exists, then overwrite the file with the latest token.
-    os.makedirs(os.path.dirname(TOKENS_FILE) or ".", exist_ok=True)
-    with open(TOKENS_FILE, "w") as f:
-        f.write(data.token + "\n")
-
-    return {
-        "status": "stored",
-        "email": idinfo.get("email"),
-        "sub": idinfo.get("sub"),
-        "issuer": idinfo.get("iss"),
-    }
