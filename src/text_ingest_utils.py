@@ -4,7 +4,7 @@ import re
 import unicodedata
 from pathlib import Path
 from typing import List, Dict, Any
-
+import platform
 from PyPDF2 import PdfReader
 from pdf2image import convert_from_path
 import pytesseract
@@ -227,14 +227,25 @@ def ocr_pdf_to_text(path: Path, max_pages: int | None = 5) -> str:
     max_pages limits pages during testing for speed.
     """
 
-    POPPLER_PATH = r"C:\poppler-25.11.0\Library\bin"
+    system = platform.system()
+    poppler_path = None
+
+    if system == "Windows":
+        poppler_path = r"C:\poppler-25.11.0\Library\bin"
 
     try:
-        images = convert_from_path(
-            str(path),
-            dpi=300,
-            poppler_path=POPPLER_PATH
-        )
+        if poppler_path:
+            images = convert_from_path(
+                str(path),
+                dpi=300,
+                poppler_path=poppler_path,
+            )
+        else:
+            # On Linux/Docker, rely on system poppler (poppler-utils)
+            images = convert_from_path(
+                str(path),
+                dpi=300,
+            )
     except Exception as e:
         print(f"Error converting PDF to images for OCR: {e}")
         return ""
@@ -252,6 +263,7 @@ def ocr_pdf_to_text(path: Path, max_pages: int | None = 5) -> str:
             print(f"Error OCR page {i}: {e}")
 
     return "\n\n".join(ocr_text)
+
 
 def extract_text_with_ocr_fallback(path: Path) -> str:
     """

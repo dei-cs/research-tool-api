@@ -6,7 +6,7 @@ import requests
 
 class VectorDBClient:
     def __init__(self):
-        self.base_url = os.getenv("VECTORDB_URL", "http://localhost:8003")
+        self.base_url = os.getenv("VECTORDB_URL", "http://research-tool-db:8003")
         self.api_key = os.getenv("VECTORDB_API_KEY", "dev-vectordb-key-12345")
         self.headers = {"X-API-Key": self.api_key}
 
