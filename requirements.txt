@@ -19,3 +19,7 @@ bs4
 arxiv
 
 PyPDF2>=3.0.0
+
+pytesseract
+
+pdf2image

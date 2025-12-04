@@ -6,7 +6,7 @@ from .auth import verify_frontend_api_key
 from .llm_client import llm_client
 from .mcp_client.academic_search.arxiv_search import arxiv_mcp
 from .vectordb_client import VectorDBClient
-from .local_ingest import build_documents_from_folder, chunk_text, extract_text
+from .text_ingest_utils import chunk_text, extract_text_with_ocr_fallback
 import re
 from pathlib import Path
 
@@ -103,35 +103,38 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
         ),
         media_type="application/x-ndjson"
     )
-@router.post("/v1/local-ingest", tags=["LLM Operations"])
-async def ingest_local_folder(
-    req: LocalFolderIngestRequest,
-    _: str = Depends(verify_frontend_api_key),
-):
-    try:
-        documents = build_documents_from_folder(req.folder_path, req.collection_name)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
-    if not documents:
-        return {"status": "ok", "ingested": 0, "message": "No supported files found (pdf/txt)."}
+ 
+#@router.post("/v1/local-ingest", tags=["LLM Operations"])
+#async def ingest_local_folder(
+#    req: LocalFolderIngestRequest,
+#    _: str = Depends(verify_frontend_api_key),
+#):
+#    try:
+#        documents = build_documents_from_folder(req.folder_path, req.collection_name)
+#    except FileNotFoundError as e:
+#        raise HTTPException(status_code=400, detail=str(e))
+#
+#    if not documents:
+#        return {"status": "ok", "ingested": 0, "message": "No supported files found (pdf/txt)."}
+#
+#    if req.max_docs is not None:
+#        documents = documents[: req.max_docs]
+#
+#    BATCH_SIZE = 50
+#    total_ingested = 0
+#
+#    for i in range(0, len(documents), BATCH_SIZE):
+#        batch = documents[i : i + BATCH_SIZE]
+#        vectordb_client.ingest(req.collection_name, batch)
+#        total_ingested += len(batch)
+#
+#    return {
+#        "status": "ok",
+#        "collection_name": req.collection_name,
+#        "ingested": total_ingested,
+#    }
 
-    if req.max_docs is not None:
-        documents = documents[: req.max_docs]
-
-    BATCH_SIZE = 50
-    total_ingested = 0
-
-    for i in range(0, len(documents), BATCH_SIZE):
-        batch = documents[i : i + BATCH_SIZE]
-        vectordb_client.ingest(req.collection_name, batch)
-        total_ingested += len(batch)
-
-    return {
-        "status": "ok",
-        "collection_name": req.collection_name,
-        "ingested": total_ingested,
-    }
 @router.post("/v1/upload-docs", response_model=UploadResult, tags=["LLM Operations"])
 async def upload_docs(
     files: List[UploadFile] = File(..., description="One or more documents to ingest"),
@@ -160,13 +163,11 @@ async def upload_docs(
         tmp_path.write_bytes(content)
 
         try:
-            full_text = extract_text(tmp_path)
-        except ValueError:
-            # Unsupported type for now, skip
-            print(f"Skipping unsupported file type: {filename}")
+            full_text = extract_text_with_ocr_fallback(tmp_path)
+        except ValueError as e:
+            print(f"Skipping {filename}: {e}")
             continue
         finally:
-            # Clean up temp file
             try:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
