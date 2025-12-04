@@ -41,3 +41,11 @@ Dockerfile
 # Logs
 *.log
 logs/
+
+# Debug scripts / outputs
+scripts/test_cleaning.py
+output/
+*.raw.txt
+*.cleaned.txt
+*.ocr.raw.txt
+*.ocr.cleaned.txt

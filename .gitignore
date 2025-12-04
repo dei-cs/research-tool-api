@@ -19,6 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+scripts/test_cleaning.py
 
 # Virtual Environment
 venv/
@@ -48,3 +49,9 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+output/
+*.raw.txt
+*.cleaned.txt
+*.ocr.raw.txt
+*.ocr.cleaned.txt
