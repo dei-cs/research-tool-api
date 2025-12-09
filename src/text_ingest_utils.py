@@ -130,17 +130,34 @@ def clean_text(text: str) -> str:
     # 4) Normalize line endings
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # 5) Collapse spaces but preserve paragraph breaks
+    # 5) fix hyphenation that happens at line breaks ---
+    # e.g. "con -\ntext" -> "context", "Repre -\nsentational" -> "Representational"
+    # This may occasionally over-merge truly hyphenated words, but is usually better
+    # for search / LLM ingestion.
+    text = re.sub(r"(\w+)\s*-\s*\n\s*(\w+)", r"\1\2", text)
+
+    # 6) Collapse spaces but preserve paragraph breaks
     #    - First, collapse multiple spaces/tabs into a single space
     text = re.sub(r"[ \t]+", " ", text)
 
     #    - Then, collapse 3+ newlines into just 2 (paragraph break)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    
+    
+    # 7) Merge soft line breaks but keep paragraph breaks
+    #    - Mark paragraph breaks (\n\n)
+    #    - Turn remaining \n into spaces
+    #    - Restore paragraph breaks
+    PARA_MARKER = "<<<PARA_BREAK>>>"
 
-    # 6) Strip trailing spaces on each line
+    text = text.replace("\n\n", PARA_MARKER)   # protect real paragraphs
+    text = re.sub(r"\n+", " ", text)          # leftover newlines → spaces
+    text = text.replace(PARA_MARKER, "\n\n")  # restore paragraphs
+
+    # 7) Strip trailing spaces on each line
     text = "\n".join(line.rstrip() for line in text.splitlines())
 
-    # 7) Optionally: remove lines that are *only* junk chars
+    # 8) Optionally: remove lines that are *only* junk chars
     #    (Lots of PDFs produce lines like "§§§§§" or "———")
     cleaned_lines = []
     junk_pattern = re.compile(r"^[^\w\s]{3,}$")  # 3+ non-word non-space chars
@@ -150,6 +167,8 @@ def clean_text(text: str) -> str:
         cleaned_lines.append(line)
     text = "\n".join(cleaned_lines)
 
+
+    text = re.sub(r" {2,}", " ", text)
     return text.strip()
 
 def looks_like_gibberish(text: str) -> bool:
