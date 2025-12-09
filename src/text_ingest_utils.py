@@ -38,19 +38,63 @@ def extract_text(path: Path) -> str:
     raise ValueError(f"Unsupported file type: {ext}")
 
 
-def chunk_text(text: str, max_chars: int = 1500) -> List[str]:
+def chunk_text(
+    text: str,
+    max_chars: int = 1500,
+    overlap: int = 0,
+) -> List[str]:
     """
-    Very simple chunker: hard split every max_chars.
-    You can later improve to split on sentences/paragraphs.
+    Chunk text into roughly max_chars pieces, trying to break on
+    paragraph/sentence/word boundaries and adding a bit of overlap.
     """
+
     text = text.strip()
     if not text:
         return []
 
-    return [
-        text[i : i + max_chars]
-        for i in range(0, len(text), max_chars)
-    ]
+    chunks: List[str] = []
+    n = len(text)
+    start = 0
+
+    # Safety: avoid silly configs
+    if overlap >= max_chars:
+        overlap = 0
+
+    while start < n:
+        end = min(start + max_chars, n)
+
+        split = -1
+
+        # 1) Prefer paragraph boundary
+        split = text.rfind("\n\n", start, end)
+
+        # 2) Then sentence boundary
+        if split == -1:
+            for sep in [". ", "? ", "! "]:
+                split = text.rfind(sep, start, end)
+                if split != -1:
+                    split += 1  # keep punctuation
+                    break
+
+        # 3) Then word boundary
+        if split == -1:
+            split = text.rfind(" ", start, end)
+
+        # 4) Fallback: hard cut
+        if split == -1 or split <= start + max_chars * 0.5:
+            split = end
+
+        chunk = text[start:split].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        if split >= n:
+            break
+
+        start = max(split - overlap, 0)
+
+    return chunks
+
 
 
 def build_documents_from_folder(root_folder: str, collection_name: str) -> List[Dict[str, Any]]:

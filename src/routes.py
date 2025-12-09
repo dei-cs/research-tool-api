@@ -314,7 +314,7 @@ async def upload_docs(
             except Exception:
                 pass
 
-        chunks = chunk_text(full_text, max_chars=config.document_processing.chunking.max_chars)
+        chunks = chunk_text(full_text, max_chars=config.document_processing.chunking.max_chars, overlap=config.document_processing.chunking.overlap)
 
         for idx, chunk in enumerate(chunks):
             doc_id = f"{user_id}:{filename}:chunk-{idx}"
