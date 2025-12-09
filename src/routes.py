@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from .auth import verify_frontend_api_key
 from .llm_client import llm_client
 from .mcp_client.academic_search.arxiv_search import arxiv_mcp
+from .mcp_client.gdrive.drive_fetcher import fetch_and_extract
 from .vectordb_client import VectorDBClient
 from .text_ingest_utils import chunk_text, extract_text_with_ocr_fallback
 from .config.config_manager import get_config
@@ -354,3 +355,85 @@ async def upload_docs(
         ingested=total_ingested,
     )
 
+class DriveFetchRequest(BaseModel):
+    access_token: str
+    collection_name: Optional[str] = Field("documents")
+    max_files: Optional[int] = Field(100)
+    q: Optional[str] = None
+    output_dir: Optional[str] = None
+    user_id: Optional[str] = Field("drive_import")
+    ingest: Optional[bool] = Field(True)
+
+@router.post("/v1/fetch-and-ingest/drive", tags=["LLM Operations"])
+async def fetch_and_ingest_drive(
+    body: DriveFetchRequest,
+    _: str = Depends(verify_frontend_api_key),
+):
+    """
+    Fetch files from Google Drive and ingest them into the vector DB after
+    running full extraction/cleaning/chunking using text_ingest_utils.
+    - Frontend must call this endpoint (authenticated with frontend API key)
+    - Main service downloads Drive files, runs extract_text_with_ocr_fallback,
+      chunks them, and then calls vectordb_client.ingest(...) to store chunks.
+    """
+    collection_name = body.collection_name or "documents"
+    user_id = body.user_id or "drive_import"
+
+    output_dir, docs = fetch_and_extract(body.access_token, max_files=body.max_files, q=body.q, output_dir=body.output_dir)
+
+    if not docs:
+        return {"output_dir": output_dir, "ingested": 0, "files": []}
+
+    documents: List[Dict[str, Any]] = []
+    for d in docs:
+        file_path = d.get("path")
+        filename = Path(file_path).name if file_path else d.get("metadata", {}).get("name", "unknown")
+        try:
+            # Use the robust extraction/ocr/clean path on the actual file
+            cleaned_text = extract_text_with_ocr_fallback(Path(file_path))
+        except ValueError as e:
+            logger.warning(f"Skipping {filename}: {e}")
+            continue
+        except Exception as e:
+            logger.exception(f"Error extracting {filename}: {e}")
+            continue
+
+        # Chunk the cleaned text
+        chunks = chunk_text(cleaned_text, max_chars=config.document_processing.chunking.max_chars)
+
+        for idx, chunk in enumerate(chunks):
+            doc_id = f"{user_id}:{filename}:chunk-{idx}"
+            documents.append(
+                {
+                    "id": doc_id,
+                    "text": chunk,
+                    "metadata": {
+                        "user_id": user_id,
+                        "source": "drive",
+                        "filename": filename,
+                        "original_id": d.get("id"),
+                        "chunk_index": idx,
+                    },
+                }
+            )
+
+    if not documents:
+        return {"output_dir": output_dir, "ingested": 0, "files": [{"id": d.get("id"), "path": d.get("path")} for d in docs]}
+
+    # Batch ingest using the existing vectordb client
+    BATCH_SIZE = config.document_processing.batch_size
+    total_ingested = 0
+    try:
+        for i in range(0, len(documents), BATCH_SIZE):
+            batch = documents[i : i + BATCH_SIZE]
+            vectordb_client.ingest(collection_name, batch)
+            total_ingested += len(batch)
+    except Exception as e:
+        logger.exception("Failed to ingest to vectordb")
+        raise HTTPException(status_code=500, detail=f"Failed to ingest to vector DB: {str(e)}")
+
+    return {
+        "output_dir": output_dir,
+        "ingested": total_ingested,
+        "files": [{"id": d.get("id"), "path": d.get("path")} for d in docs],
+    }
