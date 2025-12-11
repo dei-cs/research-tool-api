@@ -5,8 +5,9 @@ from typing import List, Optional, Dict, Any
 from .auth import verify_frontend_api_key
 from .llm_client import llm_client
 from .mcp_client.academic_search.arxiv_search import arxiv_mcp
+from .mcp_client.gdrive.drive_fetcher import fetch_and_extract
 from .vectordb_client import VectorDBClient
-from .local_ingest import build_documents_from_folder, chunk_text, extract_text
+from .text_ingest_utils import chunk_text, extract_text_with_ocr_fallback
 from .config.config_manager import get_config
 import re
 import os
@@ -241,40 +242,41 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
         ),
         media_type="application/x-ndjson"
     )
-@router.post("/v1/local-ingest", tags=["LLM Operations"])
-async def ingest_local_folder(
-    req: LocalFolderIngestRequest,
-    _: str = Depends(verify_frontend_api_key),
-):
-    try:
-        documents = build_documents_from_folder(
-            req.folder_path, 
-            req.collection_name,
-            max_chars=config.document_processing.chunking.max_chars
-        )
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
-    if not documents:
-        return {"status": "ok", "ingested": 0, "message": "No supported files found (pdf/txt)."}
 
-    if req.max_docs is not None:
-        documents = documents[: req.max_docs]
 
-    BATCH_SIZE = config.document_processing.batch_size
-    total_ingested = 0
+ 
+#@router.post("/v1/local-ingest", tags=["LLM Operations"])
+#async def ingest_local_folder(
+#    req: LocalFolderIngestRequest,
+#    _: str = Depends(verify_frontend_api_key),
+#):
+#    try:
+#        documents = build_documents_from_folder(req.folder_path, req.collection_name)
+#    except FileNotFoundError as e:
+#        raise HTTPException(status_code=400, detail=str(e))
+#
+#    if not documents:
+#        return {"status": "ok", "ingested": 0, "message": "No supported files found (pdf/txt)."}
+#
+#    if req.max_docs is not None:
+#        documents = documents[: req.max_docs]
+#
+#    BATCH_SIZE = 50
+#    total_ingested = 0
+#
+#    for i in range(0, len(documents), BATCH_SIZE):
+#        batch = documents[i : i + BATCH_SIZE]
+#        vectordb_client.ingest(req.collection_name, batch)
+#        total_ingested += len(batch)
+#
+#    return {
+#        "status": "ok",
+#        "collection_name": req.collection_name,
+#        "ingested": total_ingested,
+#    }
 
-    for i in range(0, len(documents), BATCH_SIZE):
-        batch = documents[i : i + BATCH_SIZE]
-        vectordb_client.ingest(req.collection_name, batch)
-        total_ingested += len(batch)
 
-    return {
-        "status": "ok",
-        "collection_name": req.collection_name,
-        "ingested": total_ingested,
-    }
-    
 @router.post("/v1/upload-docs", response_model=UploadResult, tags=["LLM Operations"])
 async def upload_docs(
     files: List[UploadFile] = File(..., description="One or more documents to ingest"),
@@ -303,19 +305,17 @@ async def upload_docs(
         tmp_path.write_bytes(content)
 
         try:
-            full_text = extract_text(tmp_path)
-        except ValueError:
-            # Unsupported type for now, skip
-            print(f"Skipping unsupported file type: {filename}")
+            full_text = extract_text_with_ocr_fallback(tmp_path)
+        except ValueError as e:
+            print(f"Skipping {filename}: {e}")
             continue
         finally:
-            # Clean up temp file
             try:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
                 pass
 
-        chunks = chunk_text(full_text, max_chars=config.document_processing.chunking.max_chars)
+        chunks = chunk_text(full_text, max_chars=config.document_processing.chunking.max_chars, overlap=config.document_processing.chunking.overlap)
 
         for idx, chunk in enumerate(chunks):
             doc_id = f"{user_id}:{filename}:chunk-{idx}"
@@ -355,31 +355,85 @@ async def upload_docs(
         ingested=total_ingested,
     )
 
-TOKENS_FILE = os.environ.get("TOKENS_FILE", "tokens.txt")
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")  # set this in your Docker env / .env
+class DriveFetchRequest(BaseModel):
+    access_token: str
+    collection_name: Optional[str] = Field("documents")
+    max_files: Optional[int] = Field(100)
+    q: Optional[str] = None
+    output_dir: Optional[str] = None
+    user_id: Optional[str] = Field("drive_import")
+    ingest: Optional[bool] = Field(True)
 
-class TokenRequest(BaseModel):
-    token: str
+@router.post("/v1/fetch-and-ingest/drive", tags=["LLM Operations"])
+async def fetch_and_ingest_drive(
+    body: DriveFetchRequest,
+    _: str = Depends(verify_frontend_api_key),
+):
+    """
+    Fetch files from Google Drive and ingest them into the vector DB after
+    running full extraction/cleaning/chunking using text_ingest_utils.
+    - Frontend must call this endpoint (authenticated with frontend API key)
+    - Main service downloads Drive files, runs extract_text_with_ocr_fallback,
+      chunks them, and then calls vectordb_client.ingest(...) to store chunks.
+    """
+    collection_name = body.collection_name or "documents"
+    user_id = body.user_id or "drive_import"
 
-@router.post("/login/google")
-async def verify_and_store(data: TokenRequest):
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured on server")
+    output_dir, docs = fetch_and_extract(body.access_token, max_files=body.max_files, q=body.q, output_dir=body.output_dir)
 
-    # Verify the ID token with Google's library
+    if not docs:
+        return {"output_dir": output_dir, "ingested": 0, "files": []}
+
+    documents: List[Dict[str, Any]] = []
+    for d in docs:
+        file_path = d.get("path")
+        filename = Path(file_path).name if file_path else d.get("metadata", {}).get("name", "unknown")
+        try:
+            # Use the robust extraction/ocr/clean path on the actual file
+            cleaned_text = extract_text_with_ocr_fallback(Path(file_path))
+        except ValueError as e:
+            logger.warning(f"Skipping {filename}: {e}")
+            continue
+        except Exception as e:
+            logger.exception(f"Error extracting {filename}: {e}")
+            continue
+
+        # Chunk the cleaned text
+        chunks = chunk_text(cleaned_text, max_chars=config.document_processing.chunking.max_chars)
+
+        for idx, chunk in enumerate(chunks):
+            doc_id = f"{user_id}:{filename}:chunk-{idx}"
+            documents.append(
+                {
+                    "id": doc_id,
+                    "text": chunk,
+                    "metadata": {
+                        "user_id": user_id,
+                        "source": "drive",
+                        "filename": filename,
+                        "original_id": d.get("id"),
+                        "chunk_index": idx,
+                    },
+                }
+            )
+
+    if not documents:
+        return {"output_dir": output_dir, "ingested": 0, "files": [{"id": d.get("id"), "path": d.get("path")} for d in docs]}
+
+    # Batch ingest using the existing vectordb client
+    BATCH_SIZE = config.document_processing.batch_size
+    total_ingested = 0
     try:
-        idinfo = id_token.verify_oauth2_token(data.token, grequests.Request(), GOOGLE_CLIENT_ID)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid Google ID token")
-
-    # Ensure directory exists, then overwrite the file with the latest token.
-    os.makedirs(os.path.dirname(TOKENS_FILE) or ".", exist_ok=True)
-    with open(TOKENS_FILE, "w") as f:
-        f.write(data.token + "\n")
+        for i in range(0, len(documents), BATCH_SIZE):
+            batch = documents[i : i + BATCH_SIZE]
+            vectordb_client.ingest(collection_name, batch)
+            total_ingested += len(batch)
+    except Exception as e:
+        logger.exception("Failed to ingest to vectordb")
+        raise HTTPException(status_code=500, detail=f"Failed to ingest to vector DB: {str(e)}")
 
     return {
-        "status": "stored",
-        "email": idinfo.get("email"),
-        "sub": idinfo.get("sub"),
-        "issuer": idinfo.get("iss"),
+        "output_dir": output_dir,
+        "ingested": total_ingested,
+        "files": [{"id": d.get("id"), "path": d.get("path")} for d in docs],
     }
