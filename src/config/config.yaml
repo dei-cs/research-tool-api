@@ -9,7 +9,7 @@ rag:
   collection_name: "documents"
   query_extraction:
     max_tokens: 100
-    prompt_template: |
+    query_template: |
       Extract the main search query or key information need from this message.
       Return ONLY the essential search terms or question, removing conversational elements.
       Be concise - return 1-2 sentences maximum.
@@ -18,7 +18,6 @@ rag:
       
       Search query:
 
-# Prompt Engineering
 prompts:
   system_message: "You are a helpful assistant. Provide the user with coherent answer to their question."
   context_template: |

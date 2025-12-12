@@ -6,7 +6,7 @@ from typing import List, Optional, Literal
 class QueryExtractionConfig(BaseModel):
     """Configuration for query extraction from user messages."""
     max_tokens: int = Field(100, ge=1, le=1000, description="Maximum tokens for query extraction")
-    prompt_template: str = Field(..., description="Prompt template for query extraction")
+    query_template: str = Field(..., description="Query template for query extraction")
 
 
 class RAGConfig(BaseModel):

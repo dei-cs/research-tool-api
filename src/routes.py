@@ -29,8 +29,8 @@ async def extract_search_query(prompt: str) -> str:
     """
     logger.info(f"[QUERY EXTRACTION] Starting extraction for prompt: {prompt[:100]}...")
     
-    # Use prompt template from config
-    extraction_prompt = config.rag.query_extraction.prompt_template.format(prompt=prompt)
+    # Use query template from config
+    extraction_prompt = config.rag.query_extraction.query_template.format(prompt=prompt)
     
     try:
         query = await llm_client.complete(extraction_prompt, max_tokens=config.rag.query_extraction.max_tokens)
