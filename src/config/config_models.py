@@ -22,36 +22,18 @@ class LLMTimeouts(BaseModel):
     """Timeout configuration for LLM operations."""
     streaming: float = Field(120.0, gt=0, description="Timeout for streaming requests")
     completion: float = Field(30.0, gt=0, description="Timeout for non-streaming completions")
-    connection: float = Field(10.0, gt=0, description="Connection timeout")
-    read: float = Field(60.0, gt=0, description="Read timeout")
-    write: float = Field(60.0, gt=0, description="Write timeout")
-
-
-class LLMCompletion(BaseModel):
-    """LLM completion parameters."""
-    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
-    top_p: Optional[float] = Field(1.0, ge=0.0, le=1.0, description="Nucleus sampling parameter")
-    top_k: Optional[int] = Field(50, ge=0, description="Top-k sampling parameter")
 
 
 class LLMConfig(BaseModel):
     """Configuration for LLM service."""
     default_model: str = Field("llama3.2:1b", description="Default model to use")
-    enforce_default_model: bool = Field(True, description="Force use of default model")
-    default_embedding_model: Optional[str] = Field(None, description="Default embedding model")
     timeouts: LLMTimeouts
-    completion: LLMCompletion
 
 
 class AcademicSearchConfig(BaseModel):
     """Configuration for academic search (arXiv)."""
     enabled: bool = Field(False, description="Enable/disable academic search")
     max_results: int = Field(5, ge=1, le=50, description="Maximum papers to retrieve")
-    search_fields: List[str] = Field(
-        ["title", "abstract", "category"],
-        description="Fields to search in"
-    )
-    sort_by: Literal["relevance", "date"] = Field("relevance", description="Sort order")
 
 
 class ChunkingConfig(BaseModel):
@@ -67,17 +49,8 @@ class DocumentProcessingConfig(BaseModel):
     batch_size: int = Field(50, ge=1, le=500, description="Batch size for ingestion")
 
 
-class VectorDBQueryConfig(BaseModel):
-    """Configuration for vector database queries."""
-    default_n_results: int = Field(5, ge=1, le=100, description="Default number of results")
-    max_n_results: int = Field(100, description="Maximum allowed results")
-    min_n_results: int = Field(1, description="Minimum allowed results")
-
-
 class VectorDBConfig(BaseModel):
     """Configuration for vector database."""
-    default_collection: str = Field("documents", description="Default collection name")
-    query: VectorDBQueryConfig
     timeout: int = Field(60, gt=0, description="HTTP timeout for DB operations")
 
 
@@ -92,13 +65,11 @@ class ServicesConfig(BaseModel):
     """Configuration for service URLs."""
     llm_url: str = Field(..., description="LLM service URL")
     vectordb_url: str = Field(..., description="Vector database URL")
-    ollama_url: str = Field(..., description="Ollama service URL")
 
 
 class LoggingConfig(BaseModel):
     """Configuration for logging."""
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field("INFO", description="Log level")
-    format: str = Field(..., description="Log format string")
 
 
 class AppConfig(BaseModel):

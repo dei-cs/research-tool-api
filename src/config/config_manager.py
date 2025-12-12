@@ -65,10 +65,6 @@ class ConfigManager:
         # LLM overrides
         if os.getenv("DEFAULT_MODEL"):
             config_dict["llm"]["default_model"] = os.getenv("DEFAULT_MODEL")
-        if os.getenv("ENFORCE_DEFAULT_MODEL") is not None:
-            config_dict["llm"]["enforce_default_model"] = os.getenv("ENFORCE_DEFAULT_MODEL").lower() == "true"
-        if os.getenv("LLM_TEMPERATURE"):
-            config_dict["llm"]["completion"]["temperature"] = float(os.getenv("LLM_TEMPERATURE"))
         
         # Academic search overrides
         if os.getenv("ACADEMIC_SEARCH_ENABLED") is not None:
@@ -89,8 +85,6 @@ class ConfigManager:
             config_dict["services"]["llm_url"] = os.getenv("LLM_SERVICE_URL")
         if os.getenv("VECTORDB_URL"):
             config_dict["services"]["vectordb_url"] = os.getenv("VECTORDB_URL")
-        if os.getenv("OLLAMA_URL"):
-            config_dict["services"]["ollama_url"] = os.getenv("OLLAMA_URL")
         
         return config_dict
     

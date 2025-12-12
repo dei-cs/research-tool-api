@@ -8,6 +8,9 @@ import platform
 from PyPDF2 import PdfReader
 from pdf2image import convert_from_path
 import pytesseract
+from .config.config_manager import get_config
+
+config = get_config()
 
 
 def extract_text_from_txt(path: Path) -> str:
@@ -102,7 +105,7 @@ def build_documents_from_folder(root_folder: str, collection_name: str) -> List[
     if not root.exists():
         raise FileNotFoundError(f"Folder does not exist: {root_folder}")
 
-    supported_exts = {".pdf", ".txt"}
+    supported_exts = set(config.document_processing.supported_formats)
     documents: List[Dict[str, Any]] = []
 
     for path in root.rglob("*"):

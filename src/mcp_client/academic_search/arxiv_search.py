@@ -1,6 +1,9 @@
 """arXiv search MCP server implementation."""
 import arxiv
 from typing import List, Dict, Any, Optional
+from ...config.config_manager import get_config
+
+config = get_config()
 
 
 class ArxivSearchMCP:
@@ -87,7 +90,7 @@ class ArxivSearchMCP:
         if not results:
             return "No academic papers found for this query."
         
-        context_parts = ["=== Academic Research Papers from arXiv ===\n"]
+        context_parts = [f"{config.prompts.academic_context_header}\n"]
         
         for i, paper in enumerate(results, 1):
             context_parts.append(f"\n[{i}] {paper['title']}")

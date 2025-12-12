@@ -37,3 +37,6 @@ curl -X POST "http://localhost:8000/v1/embeddings" \
   }' \
   -N
 
+
+    Explain what additional contextual information you have been provided, show it to the user in this format "Context: {context}".
+    Explain what the user question is asking in this format: "Question: {content}".
