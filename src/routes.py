@@ -169,8 +169,6 @@ async def chat(request: ChatRequest, req: Request, _: str = Depends(verify_front
     """
     logger.info(f"\n{'='*80}")
     logger.info(f"[CHAT REQUEST] New chat request received")
-    logger.info(f"[CHAT REQUEST] Model: {request.model or 'default'}")
-    logger.info(f"[CHAT REQUEST] Messages count: {len(request.messages)}")
     
     # Convert Pydantic models to dicts for the LLM client (tokens which are more readable by LLM)
     # This converts: [Message(role="user", content="Hello!")]

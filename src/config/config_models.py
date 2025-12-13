@@ -26,7 +26,7 @@ class LLMTimeouts(BaseModel):
 
 class LLMConfig(BaseModel):
     """Configuration for LLM service."""
-    default_model: str = Field("llama3.2:1b", description="Default model to use")
+    default_model: str = Field("qwen3:30b", description="Default model to use")
     timeouts: LLMTimeouts
 
 

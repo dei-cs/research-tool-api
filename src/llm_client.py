@@ -41,7 +41,7 @@ class LLMServiceClient:
         - Route to the next service in the stream is also configured here
         """
         logger.info(f"[LLM CLIENT] Starting streaming request")
-        logger.info(f"[LLM CLIENT] Model: {model or 'default'}, Messages: {len(messages)}")
+        logger.info(f"[LLM CLIENT] Model: {'qwen3:30b'}, Messages: {len(messages)}")
         
         payload = {
             "messages": messages,
@@ -127,7 +127,6 @@ class LLMServiceClient:
                     return ""  # Return empty on error
                 
                 data = response.json()
-                logger.info(f"[LLM CLIENT] Response data keys: {list(data.keys())}")
                 
                 # Extract content from response
                 if "choices" in data and len(data["choices"]) > 0:

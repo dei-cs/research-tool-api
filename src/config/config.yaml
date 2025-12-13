@@ -4,7 +4,7 @@
 # RAG Configuration
 rag:
   enabled: true
-  n_results: 3
+  n_results: 4
   relevance_threshold: 1.0
   collection_name: "documents"
   query_extraction:

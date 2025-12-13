@@ -4,12 +4,22 @@ from .app_settings import settings
 import uvicorn
 import logging
 
+# Custom formatter for compact logs with newlines after tags
+class CompactFormatter(logging.Formatter):
+    def format(self, record):
+        # Extract tag like [RAG] or [LLM CLIENT] from message
+        msg = record.getMessage()
+        if msg.startswith('[') and ']' in msg:
+            tag_end = msg.index(']') + 1
+            tag = msg[:tag_end]
+            rest = msg[tag_end:].lstrip()
+            record.msg = f"{tag}\n  {rest}"
+        return super().format(record)
+
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+handler = logging.StreamHandler()
+handler.setFormatter(CompactFormatter('%(asctime)s %(message)s', datefmt='%H:%M:%S'))
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
