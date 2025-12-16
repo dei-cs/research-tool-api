@@ -51,7 +51,7 @@ academic_search:
 # Document Processing Configuration
 document_processing:
   chunking:
-    max_chars: 1500      # Chunk size for document splitting
+    max_chars: 2000      # Chunk size for document splitting
     overlap: 0           # Future: add overlap between chunks
   supported_formats: [".pdf", ".txt"]
   batch_size: 50         # Batch size for vector DB ingestion

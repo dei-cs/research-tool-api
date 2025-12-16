@@ -37,20 +37,10 @@ def extract_text(path: Path) -> str:
         return extract_text_from_txt(path)
     if ext == ".pdf":
         return extract_text_from_pdf(path)
-    # Extend here if you want .md, .docx, etc.
     raise ValueError(f"Unsupported file type: {ext}")
 
 
-def chunk_text(
-    text: str,
-    max_chars: int = 1500,
-    overlap: int = 0,
-) -> List[str]:
-    """
-    Chunk text into roughly max_chars pieces, trying to break on
-    paragraph/sentence/word boundaries and adding a bit of overlap.
-    """
-
+def chunk_text(text: str, max_chars: int = 2000, overlap: int = 0) -> List[str]:
     text = text.strip()
     if not text:
         return []
@@ -59,7 +49,6 @@ def chunk_text(
     n = len(text)
     start = 0
 
-    # Safety: avoid silly configs
     if overlap >= max_chars:
         overlap = 0
 
@@ -68,22 +57,18 @@ def chunk_text(
 
         split = -1
 
-        # 1) Prefer paragraph boundary
         split = text.rfind("\n\n", start, end)
 
-        # 2) Then sentence boundary
         if split == -1:
             for sep in [". ", "? ", "! "]:
                 split = text.rfind(sep, start, end)
                 if split != -1:
-                    split += 1  # keep punctuation
+                    split += 1
                     break
 
-        # 3) Then word boundary
         if split == -1:
             split = text.rfind(" ", start, end)
 
-        # 4) Fallback: hard cut
         if split == -1 or split <= start + max_chars * 0.5:
             split = end
 
@@ -151,70 +136,31 @@ def remove_control_chars(s: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    """
-    Clean raw text extracted from PDFs/TXTs:
-    - Normalize Unicode (NFKC) so fancy characters become simpler equivalents.
-    - Remove control characters (except newlines and tabs).
-    - Replace weird PDF artifacts like form feed.
-    - Collapse excessive whitespace.
-    """
-
     if not text:
         return ""
 
-    # 1) Unicode normalization to simplify weird characters
     text = unicodedata.normalize("NFKC", text)
-
-    # 2) Replace common PDF artifacts
-    #    \x0c is form feed, often appears between pages
     text = text.replace("\x0c", "\n")
-
-    # 3) Strip out control characters except newlines and tabs
-    #    Control chars ASCII 0-31 & 127
-    #    Keep: \n (10), \t (9)
     text = remove_control_chars(text)
-
-    # 4) Normalize line endings
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-    # 5) fix hyphenation that happens at line breaks ---
-    # e.g. "con -\ntext" -> "context", "Repre -\nsentational" -> "Representational"
-    # This may occasionally over-merge truly hyphenated words, but is usually better
-    # for search / LLM ingestion.
     text = re.sub(r"(\w+)\s*-\s*\n\s*(\w+)", r"\1\2", text)
-
-    # 6) Collapse spaces but preserve paragraph breaks
-    #    - First, collapse multiple spaces/tabs into a single space
     text = re.sub(r"[ \t]+", " ", text)
-
-    #    - Then, collapse 3+ newlines into just 2 (paragraph break)
     text = re.sub(r"\n{3,}", "\n\n", text)
     
-    
-    # 7) Merge soft line breaks but keep paragraph breaks
-    #    - Mark paragraph breaks (\n\n)
-    #    - Turn remaining \n into spaces
-    #    - Restore paragraph breaks
     PARA_MARKER = "<<<PARA_BREAK>>>"
-
-    text = text.replace("\n\n", PARA_MARKER)   # protect real paragraphs
-    text = re.sub(r"\n+", " ", text)          # leftover newlines → spaces
-    text = text.replace(PARA_MARKER, "\n\n")  # restore paragraphs
-
-    # 7) Strip trailing spaces on each line
+    text = text.replace("\n\n", PARA_MARKER)
+    text = re.sub(r"\n+", " ", text)
+    text = text.replace(PARA_MARKER, "\n\n")
     text = "\n".join(line.rstrip() for line in text.splitlines())
 
-    # 8) Optionally: remove lines that are *only* junk chars
-    #    (Lots of PDFs produce lines like "§§§§§" or "———")
     cleaned_lines = []
-    junk_pattern = re.compile(r"^[^\w\s]{3,}$")  # 3+ non-word non-space chars
+    junk_pattern = re.compile(r"^[^\w\s]{3,}$")
     for line in text.splitlines():
         if junk_pattern.match(line.strip()):
             continue
         cleaned_lines.append(line)
+        
     text = "\n".join(cleaned_lines)
-
-
     text = re.sub(r" {2,}", " ", text)
     return text.strip()
 

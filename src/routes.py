@@ -339,6 +339,7 @@ async def upload_docs(
             ingested=0,
         )
 
+    logger.info(f"[UPLOAD] Ingesting {len(documents)} chunks into vector DB")
     # Ingest in batches to avoid huge payloads
     BATCH_SIZE = config.document_processing.batch_size
     total_ingested = 0
@@ -347,6 +348,7 @@ async def upload_docs(
         vectordb_client.ingest(collection_name, batch)
         total_ingested += len(batch)
 
+    logger.info(f"[UPLOAD] Successfully ingested {total_ingested} chunks")
     return UploadResult(
         status="ok",
         collection_name=collection_name,
@@ -380,8 +382,10 @@ async def fetch_and_ingest_drive(
     output_dir, docs = fetch_and_extract(body.access_token, max_files=body.max_files, q=body.q, output_dir=body.output_dir)
 
     if not docs:
+        logger.info(f"[DRIVE] No documents found, returning early")
         return {"output_dir": output_dir, "ingested": 0, "files": []}
 
+    logger.info(f"[DRIVE] Processing {len(docs)} documents for extraction and chunking")
     documents: List[Dict[str, Any]] = []
     for d in docs:
         file_path = d.get("path")
@@ -416,8 +420,10 @@ async def fetch_and_ingest_drive(
             )
 
     if not documents:
+        logger.info(f"[DRIVE] No documents after processing, returning")
         return {"output_dir": output_dir, "ingested": 0, "files": [{"id": d.get("id"), "path": d.get("path")} for d in docs]}
 
+    logger.info(f"[DRIVE] Ingesting {len(documents)} chunks into vector DB")
     # Batch ingest using the existing vectordb client
     BATCH_SIZE = config.document_processing.batch_size
     total_ingested = 0
@@ -430,6 +436,7 @@ async def fetch_and_ingest_drive(
         logger.exception("Failed to ingest to vectordb")
         raise HTTPException(status_code=500, detail=f"Failed to ingest to vector DB: {str(e)}")
 
+    logger.info(f"[DRIVE] Successfully ingested {total_ingested} chunks")
     return {
         "output_dir": output_dir,
         "ingested": total_ingested,
