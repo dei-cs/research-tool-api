@@ -48,8 +48,8 @@ async def extract_search_query(prompt: str) -> str:
 async def expand_prompt_with_rag(
     content: str,
     collection_name: str = "documents",
-    n_results: int = 3,
-    relevance_threshold: float = 0.7
+    n_results: int = 4,
+    relevance_threshold: float = 1
 ) -> str:
     """
     Expand prompt using RAG with query refinement.
@@ -103,7 +103,7 @@ async def expand_prompt_with_rag(
         logger.info(f"[RAG] Step 4: Formatting context from top {n_results} documents...")
         context_parts = ["=== Retrieved Context ==="]
         for i, doc in enumerate(relevant_docs[:n_results], 1):
-            doc_text = doc['document'][:500]  # Limit size
+            doc_text = doc['document']
             metadata = doc.get('metadata', {})
             source = metadata.get('filename', metadata.get('source', 'Unknown'))
             
